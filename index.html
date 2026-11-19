@@ -1,0 +1,1048 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wisp Ring 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@300;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: tam ekran stüdyo sahnesi (solda) + yüzen kontroller; sağda özellik/parça paneli. Telefonda sahne üstte, panel altta.
+     Tek görünüm: bilinçli olarak koyu stüdyo (ürün çekimi gibi). */
+  :root {
+    --bg: #090c0f;
+    --panel: #0e1317;
+    --panel-2: #131a1f;
+    --raise: #19222a;
+    --fg: #e9eef0;
+    --muted: #8d9aa3;
+    --faint: #5e6b74;
+    --line: #202a32;
+    --aqua: #8fd8d4;
+    --aqua-soft: rgba(143, 216, 212, 0.12);
+    --aqua-line: rgba(143, 216, 212, 0.38);
+    --t-ready: #a9b7c2;
+    --t-ours: #8fd8d4;
+    --t-test: #e6b36e;
+    --s-eda: #8fd8d4;
+    --s-amp: #f09a84;
+    --s-temp: #e6b36e;
+    --s-hrv: #b3a6f2;
+    --glass: rgba(14, 19, 23, 0.72);
+    --font-display: "Sora", "Space Grotesk", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 392px; height: 100%; }
+  .viewer { position: relative; min-width: 0; overflow: hidden; background: var(--bg); }
+  .stage { position: absolute; inset: 0; }
+  .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .stage canvas:active { cursor: grabbing; }
+
+  /* başlık */
+  .brand { position: absolute; top: 22px; left: max(24px, env(safe-area-inset-left, 0px)); pointer-events: none; max-width: min(460px, calc(100% - 48px)); }
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--aqua); margin: 0 0 10px; }
+  .brand h1 { font-family: var(--font-display); font-weight: 300; font-size: clamp(30px, 4.2vw, 48px); line-height: 1; letter-spacing: -0.02em; margin: 0; }
+  .brand h1 b { font-weight: 600; }
+  .brand p { margin: 10px 0 0; color: var(--muted); font-size: 14px; max-width: 34ch; text-wrap: balance; }
+
+  /* sağ üst araçlar */
+  .tools { position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .tool-row { display: flex; gap: 6px; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 4px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .chip-btn { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; font-size: 12.5px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .chip-btn:hover { color: var(--fg); }
+  .chip-btn[aria-pressed="true"] { background: var(--aqua-soft); color: var(--fg); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.25); flex: none; }
+  .dot.night { background: radial-gradient(circle at 35% 30%, #4a5157, #111417 70%); }
+  .dot.pearl { background: radial-gradient(circle at 35% 30%, #ffffff, #d8d1c5 70%); }
+
+  .hover-tag { position: absolute; pointer-events: none; background: var(--glass); color: var(--fg); border: 1px solid var(--aqua-line); border-radius: 8px;
+    padding: 3px 9px; font-size: 12px; white-space: nowrap; transform: translate(14px, 14px); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .layer-label { position: absolute; pointer-events: none; font-family: var(--font-mono); font-size: 11px; color: var(--fg); white-space: nowrap;
+    transform: translate(-50%, -100%); padding: 2px 8px; border-radius: 6px; background: var(--glass); border: 1px solid var(--line); transition: opacity .25s; }
+  .layer-label small { color: var(--aqua); margin-right: 6px; }
+
+  /* alt bölüm: HUD + mod çubuğu */
+  .stage-ui { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding-block: 0 20px; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); pointer-events: none; }
+  .stage-ui > * { pointer-events: auto; }
+  .hud { align-self: flex-start; width: min(320px, 100%); background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 10px; }
+  .hud:empty { display: none; }
+  .hud-eye { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--aqua); margin: 0; }
+  .hud-title { font-family: var(--font-display); font-size: 17px; font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+  .hud-meta { margin: 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hud-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hud-note { margin: 0; font-size: 11px; color: var(--faint); }
+  .btn { border: 1px solid var(--line); background: var(--raise); padding: 7px 12px; border-radius: 10px; font-size: 12.5px; cursor: pointer; }
+  .btn:hover { border-color: var(--aqua-line); }
+  .btn.primary { background: var(--aqua); color: #0b1214; border-color: var(--aqua); font-weight: 600; }
+  .spec-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .spec-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); }
+  .spec-chip b { font-family: var(--font-mono); font-weight: 500; color: var(--aqua); margin-right: 4px; }
+
+  .sig { display: grid; grid-template-columns: 96px minmax(0, 1fr) 64px; align-items: center; gap: 10px; font-size: 12px; }
+  .sig span:first-child { color: var(--muted); }
+  .sig canvas { width: 100%; height: 26px; display: block; }
+  .sig output { font-family: var(--font-mono); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .verdict { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); transition: border-color .3s, background .3s; }
+  .verdict .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .verdict.on { border-color: var(--aqua-line); background: var(--aqua-soft); }
+  .verdict.on .pulse { background: var(--aqua); box-shadow: 0 0 0 4px rgba(143,216,212,.18); }
+
+  .ema { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .ema div { text-align: center; padding: 8px 0 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); transition: all .2s; }
+  .ema div b { display: block; font-family: var(--font-display); font-size: 17px; font-weight: 500; }
+  .ema div small { font-size: 10px; color: var(--faint); }
+  .ema div.on { border-color: var(--aqua); background: var(--aqua-soft); }
+  .ema div.on small { color: var(--fg); }
+  .saved { font-size: 12px; color: var(--aqua); min-height: 18px; margin: 0; }
+
+  .breath-word { font-family: var(--font-display); font-size: 30px; font-weight: 300; letter-spacing: -0.02em; margin: 0; }
+  .bar { height: 6px; border-radius: 99px; background: var(--raise); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--aqua); border-radius: 99px; }
+  .batt { display: flex; align-items: baseline; gap: 10px; }
+  .batt b { font-family: var(--font-display); font-weight: 300; font-size: 34px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+  .slider-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+  .slider-row input { flex: 1; min-width: 0; accent-color: var(--aqua); }
+
+  .modebar { display: flex; gap: 4px; padding: 5px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .modebar::-webkit-scrollbar { display: none; }
+  .mode { border: 0; background: transparent; padding: 9px 16px; border-radius: 999px; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .mode:hover { color: var(--fg); }
+  .mode[aria-pressed="true"] { background: var(--fg); color: #0b0f12; font-weight: 600; }
+  .hint { font-size: 11.5px; color: var(--faint); margin: 0; }
+
+  /* panel */
+  .panel { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; min-width: 0;
+    padding-block: 22px 32px; padding-left: 22px; padding-right: max(22px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+  .p-head h2 { font-family: var(--font-display); font-size: 20px; font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+  .p-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel-2); }
+  .kpi b { display: block; font-family: var(--font-display); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 11px; color: var(--muted); }
+
+  .info { border: 1px solid var(--aqua-line); background: linear-gradient(180deg, var(--aqua-soft), transparent 70%); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .info h3 { font-family: var(--font-display); font-size: 16px; font-weight: 500; margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .info p { margin: 0; font-size: 13.5px; }
+  .info .spec { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+  .info .ev { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  .tab { border: 0; background: transparent; padding: 8px 4px; margin-right: 14px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--aqua); }
+
+  .grp-title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 14px 0 6px; }
+  .grp-title:first-child { margin-top: 0; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .item { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; cursor: pointer; }
+  .item:hover { background: var(--panel-2); }
+  .item[aria-selected="true"] { background: var(--aqua-soft); }
+  .num { font-family: var(--font-mono); font-size: 11px; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+  .item[aria-selected="true"] .num { color: var(--aqua); }
+  .name { min-width: 0; font-size: 13px; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; justify-self: end; border: 1px solid rgba(255,255,255,.15); }
+  .tag { font-size: 10.5px; font-weight: 500; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .tag.f-v2, .tag.ready { color: var(--t-ready); }
+  .tag.f-sw, .tag.ours { color: var(--t-ours); }
+  .tag.f-hw, .tag.test { color: var(--t-test); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 11.5px; color: var(--muted); }
+
+  .kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 12.5px; margin: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+  .stack { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; margin: 0; }
+  .stack dt { color: var(--muted); }
+  .stack dd { margin: 0; text-align: right; }
+  .steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+  .steps li::marker { color: var(--aqua); font-family: var(--font-mono); }
+  .out { font-size: 12.5px; color: var(--muted); margin: 0; }
+
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; height: auto; }
+    .viewer { height: auto; overflow: visible; display: flex; flex-direction: column; }
+    .stage { position: relative; height: 64vh; min-height: 380px; }
+    .stage-ui { position: static; padding-block: 12px 4px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .hud { width: 100%; }
+    .brand { top: 16px; left: max(16px, env(safe-area-inset-left, 0px)); }
+    .brand p { display: none; }
+    .tools { top: 14px; right: max(12px, env(safe-area-inset-right, 0px)); }
+    .panel { border-left: 0; border-top: 1px solid var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="app">
+  <div class="viewer">
+    <div class="stage" id="stage">
+      <div class="brand">
+        <p class="eyebrow">V3 · Tasarım önerisi · Kasım 2026</p>
+        <h1>Wisp <b>Ring</b></h1>
+        <p>Stresi ölçen, soran ve sakinleştiren yüzük. Ekran yok; her şey dönen halkada.</p>
+      </div>
+      <div class="tools">
+        <div class="tool-row" role="group" aria-label="Halka rengi">
+          <button class="chip-btn" type="button" id="finNight" aria-pressed="true"><span class="dot night"></span>Gece</button>
+          <button class="chip-btn" type="button" id="finPearl" aria-pressed="false"><span class="dot pearl"></span>İnci</button>
+        </div>
+        <div class="tool-row" role="group" aria-label="Görünüm">
+          <button class="chip-btn" type="button" id="xrayBtn" aria-pressed="false">Röntgen</button>
+          <button class="chip-btn" type="button" id="fingerBtn" aria-pressed="false">Parmak</button>
+          <button class="chip-btn" type="button" id="resetBtn">Sıfırla</button>
+        </div>
+      </div>
+      <div class="hover-tag" id="hoverTag" hidden></div>
+      <div id="labels"></div>
+    </div>
+    <div class="stage-ui">
+      <section class="hud" id="hud" aria-live="polite"></section>
+      <nav class="modebar" id="modebar" aria-label="Sahne modu"></nav>
+      <p class="hint">Sürükle: döndür · Tekerlek: yakınlaş · Bir parçaya tıkla: yakından gör</p>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <header class="p-head">
+      <h2>Wisp Ring · V3</h2>
+      <p>Ölçüler ilk tahmin · US 8 (iç çap 18,2 mm) · Hedef: UIST 2027</p>
+    </header>
+    <div class="kpis">
+      <div class="kpi"><b>18</b><span>özellik</span></div>
+      <div class="kpi"><b>3,5 mm</b><span>kalınlık</span></div>
+      <div class="kpi"><b>≥ 8 sa</b><span>pil hedefi</span></div>
+    </div>
+
+    <section class="info" id="info" aria-live="polite"></section>
+
+    <div class="tabs" role="tablist" aria-label="Panel">
+      <button class="tab" role="tab" id="tab-feat" aria-selected="true" aria-controls="pane-feat" type="button">Özellikler</button>
+      <button class="tab" role="tab" id="tab-parts" aria-selected="false" aria-controls="pane-parts" type="button">Parçalar</button>
+      <button class="tab" role="tab" id="tab-tech" aria-selected="false" aria-controls="pane-tech" type="button">Teknik</button>
+    </div>
+
+    <section id="pane-feat" role="tabpanel" aria-labelledby="tab-feat">
+      <div class="legend"><span class="tag f-v2">V2'den</span><span class="tag f-sw">Yeni · yazılım</span><span class="tag f-hw">Yeni · donanım</span></div>
+      <div id="featList"></div>
+    </section>
+
+    <section id="pane-parts" role="tabpanel" aria-labelledby="tab-parts" hidden>
+      <div class="legend"><span class="tag ready">Hazır parça</span><span class="tag ours">Bizim tasarım</span><span class="tag test">Test edilecek</span></div>
+      <div id="partList"></div>
+    </section>
+
+    <section id="pane-tech" role="tabpanel" aria-labelledby="tab-tech" hidden>
+      <p class="grp-title">Kararlar</p>
+      <dl class="kv">
+        <dt>Etkileşim</dt><dd>Dönen halka + dokunarak seçme · ekran yok</dd>
+        <dt>Şarj</dt><dd>Kablosuz, eş eksenli direk · 6,78 MHz</dd>
+        <dt>İşlemci</dt><dd>nRF52840 (ilk prototip XIAO)</dd>
+        <dt>PPG</dt><dd>MAX30101 · yeşil + kırmızı + kızılötesi</dd>
+        <dt>IMU</dt><dd>BMI270 · alternatif ICM-42688</dd>
+        <dt>Sıcaklık</dt><dd>MAX30205</dd>
+        <dt>Malzeme</dt><dd>Kapalı metal halka yok; dönen halka zirkonya seramik</dd>
+        <dt>Pil</dt><dd>Kavisli LiPo · ≥ 8 saat (uyku için)</dd>
+      </dl>
+      <p class="grp-title">Kesit · parmaktan dışarı</p>
+      <dl class="stack" id="stack"></dl>
+      <p class="grp-title">Test sırası</p>
+      <ol class="steps">
+        <li>3D baskı: iç + dış halka, 0,2 / 0,3 / 0,4 mm boşluk</li>
+        <li>Mıknatıs + Hall sensörü: adım sayımı masada</li>
+        <li>Kablosuz şarj masada: mıknatıs ısınıyor mu</li>
+        <li>EDA elektrotlarının parmağa teması</li>
+        <li>Esnek PCB çizimi ve fabrika</li>
+      </ol>
+      <p class="grp-title">Kapsam dışı</p>
+      <p class="out">AFib, EKG, tansiyon, uyku apnesi, damar yaşı (tıbbi teşhis alanı) · döngü takibi (hassas veri) · ışık sensörü (yüzükte güvenilmez)</p>
+    </section>
+  </aside>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const DEG = Math.PI / 180;
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- ölçüler (mm, ilk tahmin) ----------
+const R = { skin: 9.1, shellOut: 9.8, pcbIn: 9.85, pcbOut: 10.0, batIn: 10.05, batOut: 10.85, housIn: 10.9, housOut: 11.3, ringIn: 11.45, ringOut: 12.6 };
+const W = { shell: 8, pcb: 7, bat: 5, hous: 8, ring: 5 };
+const MAGNETS = 8, STEP_DEG = 22.5;
+const HALL_A = 85, HALL_B = HALL_A + 22.5;
+
+// ---------- parçalar ----------
+const PTAG = { ready: "Hazır parça", ours: "Bizim tasarım", test: "Test edilecek" };
+const PARTS = {
+  shell:   { name: "İç halka", grp: "Parmağa değen", tag: "ours", sw: "#dfe7ea",
+             role: "Parmakta sabit duran iç halka. Dış halka dönse de sensörler cilde hep aynı yerden bakar.",
+             spec: "Biyouyumlu reçine · 0,7 mm duvar · PPG için şeffaf pencere" },
+  eda:     { name: "EDA elektrotları (2)", grp: "Parmağa değen", tag: "test", sw: "#c9d2d8",
+             role: "Cildin elektriksel iletkenliğini ölçer. Stres anında ter bezleri açılır, iletkenlik yükselir.",
+             spec: "Paslanmaz çelik · avuç içi tarafında, PPG'nin iki yanında" },
+  ppg:     { name: "MAX30101 · PPG", grp: "Esnek PCB", tag: "ready", sw: "#2bff88",
+             role: "Yeşil, kırmızı ve kızılötesi ışıkla nabız dalgasını okur. Nabız, HRV, SpO₂, solunum, damar daralması ve uykunun ham verisi buradan gelir.",
+             spec: "5,6 × 3,3 × 1,55 mm · 3 LED + fotodiyot · cilde bakar" },
+  temp:    { name: "MAX30205 · sıcaklık", grp: "Esnek PCB", tag: "ready", sw: "#e6b36e",
+             role: "Cilt sıcaklığı. Stres anında parmak soğur, sakinleşince ısınır.",
+             spec: "±0,1 °C · 3 × 3 mm · termal ped cilde değer" },
+  pcb:     { name: "Esnek PCB", grp: "Esnek PCB", tag: "ready", sw: "#b06f26",
+             role: "Bütün parçaların üstünde durduğu kıvrık kart. Üretim ve dizgi fabrikada.",
+             spec: "4 katlı esnek kart · ~0,15 mm" },
+  mcu:     { name: "nRF52840 · işlemci + BLE", grp: "Esnek PCB", tag: "ready", sw: "#121417",
+             role: "Yüzüğün beyni. Sinyalleri işler, telefona Bluetooth ile yollar; telefon yokken veriyi saklar.",
+             spec: "WLCSP ~3,5 × 3,6 mm · ilk prototip XIAO nRF52840" },
+  ant:     { name: "Çip anten", grp: "Esnek PCB", tag: "ready", sw: "#e9ebe8",
+             role: "Bluetooth anteni. Pilden ve bobinden uzakta, sol yanda.",
+             spec: "~3,2 × 1,6 mm" },
+  imu:     { name: "BMI270 · IMU", grp: "Esnek PCB", tag: "ready", sw: "#1d2126",
+             role: "Hareket, adım, uykuda kıpırdanma ve parmak vuruşu (dokunarak seçme).",
+             spec: "2,5 × 3,0 × 0,8 mm · alternatif ICM-42688" },
+  hall:    { name: "Hall sensörleri (2)", grp: "Esnek PCB", tag: "test", sw: "#3b6ea8",
+             role: "Dönen halkadaki mıknatısları sayar. 22,5° arayla durdukları için dönüş yönünü de bulur: turda 16 adım.",
+             spec: "Düşük güçlü Hall · quadrature" },
+  lra:     { name: "Titreşim motoru (LRA)", grp: "Esnek PCB", tag: "ours", sw: "#b8bec4",
+             role: "Nefes ritmi, halkanın her adımında bir tık hissi ve anlık soru bildirimi.",
+             spec: "Küçük LRA + sürücü çipi" },
+  power:   { name: "Şarj ve güç devresi", grp: "Esnek PCB", tag: "ours", sw: "#1a1d21",
+             role: "Bobinden gelen akımı doğrultur, pili güvenle doldurur, 1,8 V ve 3,3 V üretir.",
+             spec: "2 Schottky diyot + BQ25125 (Open Ring'deki gibi) · pil sıcaklığı izlenir" },
+  coil:    { name: "Alıcı bobin", grp: "Esnek PCB", tag: "test", sw: "#d4915a",
+             role: "Şarj kaidesindeki bobinden enerjiyi havadan alır. Dönen halkanın yanındaki şeritte, mıknatıslardan uzakta.",
+             spec: "5 sarım bakır · esnek PCB kenarında · 6,78 MHz'e ayarlı" },
+  ferrite: { name: "Ferrit şerit", grp: "Esnek PCB", tag: "test", sw: "#2f3134",
+             role: "Bobinin alanını mıknatıslardan ve pilden uzak tutar, ısınmayı azaltır.",
+             spec: "~0,1 mm esnek ferrit" },
+  battery: { name: "Kavisli pil", grp: "Pil ve gövde", tag: "ready", sw: "#c7ccd1",
+             role: "Üst tarafı saran kavisli LiPo. Hedef: bir gecelik uyku ölçümüne yetmesi.",
+             spec: "~60 mAh (iRing ölçeğinde) · hedef ≥ 8 saat" },
+  housing: { name: "Dış gövde", grp: "Pil ve gövde", tag: "ours", sw: "#2a3036",
+             role: "Elektroniği kapatır; dönen halkanın üstünde kaydığı yatağı oluşturur.",
+             spec: "Reçine · kapalı metal halka yok, şarjı bozmasın" },
+  ring:    { name: "Dönen halka", grp: "Dönen halka", tag: "ours", sw: "#15181b",
+             role: "Başparmakla çevrilir. Menüde gezinme, anlık stres puanı ve fidget hepsi bununla.",
+             spec: "Zirkonya seramik · 5 mm · iletken değil, kablosuz şarjı bozmaz" },
+  magnets: { name: "Mıknatıslar (8)", grp: "Dönen halka", tag: "test", sw: "#c25a52",
+             role: "Halkanın iç yüzünde N–S sırayla dizili. Hall sensörlerinin üstünden geçtikçe adım sayılır.",
+             spec: "Ø1,1 × 0,35 mm neodyum · 45° arayla" },
+  dock:    { name: "Şarj kaidesi", grp: "Şarj kaidesi", tag: "ours", sw: "#eef7f7",
+             role: "Yüzük direğe geçirilir, yerçekimi hizalar; ek mıknatıs gerekmez. Işık halkası şarj durumunu gösterir.",
+             spec: "Buzlu cam direk + mat taban · USB-C" },
+  txcoil:  { name: "Verici bobin", grp: "Şarj kaidesi", tag: "test", sw: "#d4915a",
+             role: "Direğin içinde. Yüzükteki bobinle aynı eksende durduğu için enerji aktarımı verimli.",
+             spec: "Sürücü devre + LC devresi · 6,78 MHz" },
+};
+const PART_ORDER = Object.keys(PARTS);
+
+// ---------- özellikler ----------
+const FTAG = { v2: "V2'den", sw: "Yeni · yazılım", hw: "Yeni · donanım" };
+const FEATURES = [
+  { g: "Ölçüm", n: 1, name: "Nabız", tag: "v2", parts: ["ppg"], d: "PPG sensöründen sürekli nabız." },
+  { g: "Ölçüm", n: 2, name: "HRV", tag: "v2", parts: ["ppg"], d: "Kalp atışları arasındaki değişkenlik. Stres yükseldikçe düşer." },
+  { g: "Ölçüm", n: 3, name: "SpO₂", tag: "v2", parts: ["ppg"], d: "Kırmızı ve kızılötesi ışıkla kandaki oksijen." },
+  { g: "Ölçüm", n: 4, name: "Cilt sıcaklığı", tag: "v2", parts: ["temp"], d: "Parmak cildinin sıcaklığı." },
+  { g: "Ölçüm", n: 5, name: "Hareket ve adım", tag: "v2", parts: ["imu"], d: "IMU ile hareket, adım ve hareketsizlik." },
+  { g: "Ölçüm", n: 6, name: "Solunum hızı", tag: "sw", parts: ["ppg"], mode: "breath", d: "Nabız dalgasının nefesle oynamasından, yeni donanım olmadan.", ev: "τ-Ring (34 kişi): ortalama hata ~3 nefes/dk." },
+  { g: "Ölçüm", n: 7, name: "Uyku evreleri", tag: "sw", parts: ["ppg", "imu", "temp"], d: "Hafif, derin, REM ve uyanıklık. Gece boyu takmayı ve pil hedefini gerektirir.", ev: "Oura: uyku laboratuvarıyla %79 uyum, kappa 0,65 (35 kişi)." },
+  { g: "Ölçüm", n: 8, name: "Parmak damar daralması", tag: "sw", parts: ["ppg"], mode: "stress", d: "Stres anında parmak damarları daralır, nabız dalgası küçülür.", ev: "Stres testinde genlik belirgin düştü (31 kişi, p < 0,001)." },
+  { g: "Ölçüm", n: 9, name: "Stres anında sıcaklık düşüşü", tag: "sw", parts: ["temp"], mode: "stress", d: "Mutlak değere değil ani düşüşe bakılır; soğuk ortamla karışmasın.", ev: "Dikkat görevinde parmak ucu 4–5 °C soğudu (19 kişi)." },
+  { g: "Ölçüm", n: 10, name: "EDA · cilt iletkenliği", tag: "hw", parts: ["eda"], mode: "stress", d: "Sempatik sinir sisteminin doğrudan izi. Stres ölçümüne en güçlü ek.", ev: "Parmak, EDA ölçümünde altın standart bölge." },
+  { g: "Etkileşim", n: 11, name: "Dönen halka", tag: "hw", parts: ["ring", "magnets", "hall"], mode: "ring", d: "Encoder gibi, turda 16 adım. Menüde gezinme ve seçim." },
+  { g: "Etkileşim", n: 12, name: "Dokunarak seçme", tag: "sw", parts: ["imu"], d: "IMU parmak vuruşunu algılar; ayrı buton yok." },
+  { g: "Etkileşim", n: 13, name: "Anı işaretleme", tag: "v2", parts: ["ring", "imu"], d: "Kullanıcı kendi zor anını tek hareketle işaretler." },
+  { g: "Etkileşim", n: 14, name: "Titreşim", tag: "hw", parts: ["lra"], mode: "breath", d: "Gerginlik anında nefes ritmi, halkada adım hissi." },
+  { g: "Araştırma katkısı", n: 15, name: "Halkayla anlık stres puanı", tag: "sw", parts: ["ring", "hall", "lra"], mode: "ring", d: "Yüzük titrer, kullanıcı halkayı çevirip 1–5 puan verir. Stres tespitinin doğruluğunu kanıtlayan etiketli veri.", ev: "Akıllı saatte micro-EMA yanıt oranı %74 (17 kişi)." },
+  { g: "Araştırma katkısı", n: 16, name: "Kişiye göre ayarlanan nefes rehberi", tag: "sw", parts: ["lra", "ppg"], mode: "breath", d: "Dakikada ~6 nefes ritmi; solunum ve HRV'ye bakarak kişinin en iyi hızına ayarlanır.", ev: "HRV biofeedback meta-analizi: 24 çalışma, 484 kişi, g = 0,83." },
+  { g: "Araştırma katkısı", n: 17, name: "Ölçen fidget yüzüğü", tag: "sw", parts: ["ring", "hall"], mode: "ring", d: "Halkayı çevirme davranışı kaydedilir. Soru: insanlar stresliyken daha mı çok çeviriyor?", ev: "Fidget yüzüğü pilotu: bir haftada kaygı azaldı (51 kişi, zayıf kanıt). UIST'teki 4 yüzükte yok." },
+  { g: "Araştırma katkısı", n: 18, name: "Kişisel taban çizgisi", tag: "sw", parts: ["mcu"], d: "İlk 1–2 haftada kişinin kendi normali öğrenilir; yanlış alarmlar azalır." },
+  { g: "Altyapı", n: null, name: "Kablosuz şarj", tag: "hw", parts: ["coil", "ferrite", "power", "dock", "txcoil"], mode: "charge", d: "Eş eksenli bobinler; yüzük kaideye geçince şarj başlar. Dışarıda metal temas yok.", ev: "Referans: açık kaynak Open Ring (Memfault)." },
+  { g: "Altyapı", n: null, name: "Bluetooth ve hafıza", tag: "v2", parts: ["mcu", "ant"], d: "Wisp uygulamasıyla BLE; telefon yokken veri yüzükte birikir." },
+];
+
+// ---------- renderer + sahne ----------
+const stageEl = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stageEl.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+scene.background = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 512; const g = c.getContext("2d");
+  const grd = g.createRadialGradient(256, 230, 10, 256, 256, 380);
+  grd.addColorStop(0, "#1b2730"); grd.addColorStop(0.5, "#0f161b"); grd.addColorStop(1, "#06080a");
+  g.fillStyle = grd; g.fillRect(0, 0, 512, 512);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 1000);
+camera.position.set(34, 16, 44);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.07;
+controls.minDistance = 7; controls.maxDistance = 150;
+controls.autoRotateSpeed = 0.7;
+
+const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(25, 40, 30); scene.add(key);
+const rim = new THREE.DirectionalLight(0x9fe6e2, 0.9); rim.position.set(-35, 10, -30); scene.add(rim);
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+
+// ---------- yardımcılar ----------
+const rad = d => Math.PI / 2 - d * DEG;   // üstten saat yönünde derece -> three açısı
+function profile(rIn, rOut, w, c) {
+  c = Math.max(0.001, Math.min(c, (rOut - rIn) / 2 - 0.001, w / 2 - 0.001));
+  const h = w / 2, pts = [], N = 6;
+  const arc = (cx, cy, a0) => { for (let i = 0; i <= N; i++) { const a = a0 + (i / N) * Math.PI / 2; pts.push(new THREE.Vector2(cx + c * Math.cos(a), cy + c * Math.sin(a))); } };
+  arc(rOut - c, -h + c, -Math.PI / 2); arc(rOut - c, h - c, 0); arc(rIn + c, h - c, Math.PI / 2); arc(rIn + c, -h + c, Math.PI);
+  pts.push(pts[0].clone());
+  return pts;
+}
+function band(rIn, rOut, w, c = 0.2, o = {}) {
+  const { seg = 180, d0 = null, d1 = null, axisY = false, z = 0 } = o;
+  const pts = profile(rIn, rOut, w, c);
+  const g = d0 === null ? new THREE.LatheGeometry(pts, seg) : new THREE.LatheGeometry(pts, seg, Math.PI - d1 * DEG, (d1 - d0) * DEG);
+  if (!axisY) g.rotateX(Math.PI / 2);
+  if (z) g.translate(0, 0, z);
+  return g;
+}
+function cap(rIn, rOut, w, c, deg) {
+  const g = new THREE.ShapeGeometry(new THREE.Shape(profile(rIn, rOut, w, c)), 4);
+  g.rotateX(Math.PI / 2); g.rotateZ(rad(deg)); return g;
+}
+class Helix extends THREE.Curve {
+  constructor(r, a, b, turns, axisY = false) { super(); this.r = r; this.a = a; this.b = b; this.turns = turns; this.axisY = axisY; }
+  getPoint(t, out = new THREE.Vector3()) {
+    const ang = t * this.turns * Math.PI * 2, h = this.a + (this.b - this.a) * t;
+    return this.axisY ? out.set(this.r * Math.cos(ang), h, this.r * Math.sin(ang)) : out.set(this.r * Math.cos(ang), this.r * Math.sin(ang), h);
+  }
+}
+function mount(parent, deg, r, z = 0) {   // yerel eksen: x teğet, y dışa doğru, z yüzük ekseni
+  const g = new THREE.Group(); const a = rad(deg);
+  g.position.set(r * Math.cos(a), r * Math.sin(a), z); g.rotation.z = a - Math.PI / 2; parent.add(g); return g;
+}
+const rbox = (w, h, d, rr = 0.12) => new RoundedBoxGeometry(w, h, d, 3, Math.min(rr, w / 2, h / 2, d / 2) * 0.9);
+
+// ---------- dokular ----------
+function pcbTexture() {
+  const c = document.createElement("canvas"); c.width = 2048; c.height = 256; const g = c.getContext("2d");
+  g.fillStyle = "#a9681f"; g.fillRect(0, 0, c.width, c.height);
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  g.strokeStyle = "rgba(244, 186, 116, 0.6)"; g.lineWidth = 3; g.lineJoin = "round";
+  for (let i = 0; i < 90; i++) {
+    let x = rnd() * c.width, y = rnd() * c.height; g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 4; k++) { if (k % 2 === 0) x += (rnd() - 0.5) * 300; else y += (rnd() - 0.5) * 140; g.lineTo(x, y); }
+    g.stroke();
+  }
+  g.fillStyle = "rgba(70, 36, 10, 0.85)";
+  for (let i = 0; i < 220; i++) { g.beginPath(); g.arc(rnd() * c.width, rnd() * c.height, 4, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+function radialTex(inner, outer) {
+  const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d");
+  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128); grd.addColorStop(0, inner); grd.addColorStop(1, outer);
+  g.fillStyle = grd; g.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c);
+}
+
+// ---------- malzemeler ----------
+const std = o => new THREE.MeshStandardMaterial(o);
+const phys = o => new THREE.MeshPhysicalMaterial(o);
+const M = {
+  shell: phys({ color: 0xe4ecef, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.12, transparent: true, opacity: 0.62, depthWrite: false }),
+  eda: std({ color: 0xcfd7dc, metalness: 1, roughness: 0.26 }),
+  ppg: std({ color: 0x15181b, roughness: 0.45 }),
+  temp: std({ color: 0x1b1e21, roughness: 0.45 }),
+  gold: std({ color: 0xe1b866, metalness: 1, roughness: 0.25 }),
+  pcb: std({ map: pcbTexture(), roughness: 0.36, metalness: 0.15 }),
+  mcu: std({ color: 0x121417, roughness: 0.38 }),
+  ant: std({ color: 0xe9ebe8, roughness: 0.35 }),
+  imu: std({ color: 0x1d2126, roughness: 0.4 }),
+  hall: std({ color: 0x23272c, roughness: 0.4 }),
+  lra: std({ color: 0xb8bec4, metalness: 0.9, roughness: 0.3 }),
+  power: std({ color: 0x1a1d21, roughness: 0.42 }),
+  coil: std({ color: 0xd4915a, metalness: 1, roughness: 0.26 }),
+  ferrite: std({ color: 0x2f3134, roughness: 0.75 }),
+  battery: std({ color: 0xc7ccd1, metalness: 0.75, roughness: 0.3, side: THREE.DoubleSide }),
+  housing: phys({ color: 0x2a3036, roughness: 0.46, clearcoat: 0.4, transparent: true, opacity: 1 }),
+  ring: phys({ color: 0x15181b, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, opacity: 1 }),
+  magN: std({ color: 0xc25a52, metalness: 0.7, roughness: 0.3 }),
+  magS: std({ color: 0x4f74b3, metalness: 0.7, roughness: 0.3 }),
+  dockBase: phys({ color: 0x1b2025, roughness: 0.6, clearcoat: 0.25 }),
+  glass: phys({ color: 0xeef7f7, transmission: 1, roughness: 0.3, thickness: 6, ior: 1.45 }),
+  txcoil: std({ color: 0xd4915a, metalness: 1, roughness: 0.26 }),
+  ledG: std({ color: 0x0c3a22, emissive: 0x2bff88, emissiveIntensity: 0.4 }),
+  ledR: std({ color: 0x3a0c10, emissive: 0xff3344, emissiveIntensity: 0.3 }),
+  ledIR: std({ color: 0x220608, emissive: 0x7a1020, emissiveIntensity: 0.2 }),
+  diode: std({ color: 0x1e2a36, metalness: 0.6, roughness: 0.2 }),
+  status: std({ color: 0x0b2a2a, emissive: 0x8fd8d4, emissiveIntensity: 0.2 }),
+};
+for (const k of ["ledG", "ledR", "ledIR", "status"]) M[k].userData.noHL = true;
+const glowMat = (hex, k = 3) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(k), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+
+const FINISH = {
+  night: { ring: 0x15181b, ringR: 0.15, hous: 0x2a3036, base: 0x1b2025 },
+  pearl: { ring: 0xeee9e0, ringR: 0.2, hous: 0xcac4ba, base: 0xe4ded3 },
+};
+
+// ---------- montaj ----------
+const partMeshes = {};
+const reg = (id, mesh) => { mesh.userData.partId = id; (partMeshes[id] ||= []).push(mesh); return mesh; };
+const product = new THREE.Group(); scene.add(product);
+const L = { shell: new THREE.Group(), pcb: new THREE.Group(), battery: new THREE.Group(), housing: new THREE.Group(), ring: new THREE.Group() };
+for (const g of Object.values(L)) product.add(g);
+const spin = new THREE.Group(); L.ring.add(spin);   // encoder dönüşü
+
+// iç halka + EDA
+L.shell.add(reg("shell", new THREE.Mesh(band(R.skin, R.shellOut, W.shell, 0.32), M.shell)));
+const edaGlows = [];
+for (const d of [155, 205]) {
+  L.shell.add(reg("eda", new THREE.Mesh(band(R.skin - 0.06, R.skin + 0.05, 2.6, 0.03, { seg: 24, d0: d - 7, d1: d + 7 }), M.eda)));
+  const gl = new THREE.Mesh(band(R.skin - 0.12, R.skin + 0.02, 3.2, 0.05, { seg: 24, d0: d - 8.5, d1: d + 8.5 }), glowMat(0x8fd8d4, 2.5));
+  gl.raycast = () => {}; L.shell.add(gl); edaGlows.push(gl);
+}
+
+// esnek PCB
+L.pcb.add(reg("pcb", new THREE.Mesh(band(R.pcbIn, R.pcbOut, W.pcb, 0.05), M.pcb)));
+// PPG (cilde bakar)
+{
+  const m = mount(L.pcb, 180, R.pcbIn);
+  const body = new THREE.Mesh(rbox(5.6, 0.9, 3.3, 0.2), M.ppg); body.position.y = -0.45; m.add(reg("ppg", body));
+  [[M.ledG, -1.7], [M.ledR, -0.75], [M.ledIR, 0.2]].forEach(([mt, x]) => {
+    const led = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.12, 24), mt); led.position.set(x, -0.93, 0); m.add(reg("ppg", led));
+  });
+  const pd = new THREE.Mesh(rbox(1.3, 0.12, 1.3, 0.05), M.diode); pd.position.set(1.6, -0.93, 0); m.add(reg("ppg", pd));
+}
+// sıcaklık (cilde bakar)
+const tempGlow = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.05, 2.8), glowMat(0xe6b36e, 2.2)); tempGlow.raycast = () => {};
+{
+  const m = mount(L.pcb, 232, R.pcbIn);
+  const body = new THREE.Mesh(rbox(3, 0.8, 3, 0.15), M.temp); body.position.y = -0.4; m.add(reg("temp", body));
+  const pad = new THREE.Mesh(rbox(2, 0.08, 2, 0.03), M.gold); pad.position.y = -0.84; m.add(reg("temp", pad));
+  tempGlow.position.y = -0.9; m.add(tempGlow);
+}
+// dış yüzdeki çipler (pilin kapladığı üst yayın dışında)
+const chip = (id, deg, w, h, d, mat, z = 0, rr = 0.12) => { const m = mount(L.pcb, deg, R.pcbOut, z); const c = new THREE.Mesh(rbox(w, h, d, rr), mat); c.position.y = h / 2; m.add(reg(id, c)); return c; };
+chip("mcu", 128, 3.6, 0.5, 3.6, M.mcu);
+chip("imu", 152, 2.5, 0.8, 3.0, M.imu);
+chip("hall", HALL_A, 1.5, 0.6, 1.5, M.hall, 0, 0.08);
+chip("hall", HALL_B, 1.5, 0.6, 1.5, M.hall, 0, 0.08);
+chip("power", 200, 2.0, 0.6, 2.0, M.power, -0.9);
+chip("power", 210, 1.2, 0.5, 1.0, M.power, 1.3, 0.06);
+chip("power", 194, 1.0, 0.45, 0.8, M.power, 1.4, 0.06);
+const lraMesh = chip("lra", 247, 4.0, 0.8, 3.4, M.lra, 0, 0.3);
+chip("ant", 276, 3.2, 0.5, 1.6, M.ant, -1.6, 0.06);
+// alıcı bobin + ferrit (dönen halkanın yanındaki şerit)
+L.pcb.add(reg("coil", new THREE.Mesh(new THREE.TubeGeometry(new Helix(R.pcbOut + 0.07, 2.75, 3.35, 5), 900, 0.065, 8, false), M.coil)));
+L.pcb.add(reg("ferrite", new THREE.Mesh(band(R.pcbOut + 0.17, R.pcbOut + 0.25, 0.95, 0.02, { z: 3.05 }), M.ferrite)));
+
+// kavisli pil
+L.battery.add(reg("battery", new THREE.Mesh(band(R.batIn, R.batOut, W.bat, 0.25, { seg: 96, d0: -70, d1: 70 }), M.battery)));
+L.battery.add(reg("battery", new THREE.Mesh(cap(R.batIn, R.batOut, W.bat, 0.25, -70), M.battery)));
+L.battery.add(reg("battery", new THREE.Mesh(cap(R.batIn, R.batOut, W.bat, 0.25, 70), M.battery)));
+
+// dış gövde
+L.housing.add(reg("housing", new THREE.Mesh(band(R.housIn, R.housOut, W.hous, 0.18), M.housing)));
+for (const s of [-1, 1]) L.housing.add(reg("housing", new THREE.Mesh(band(R.housIn, R.ringOut - 0.2, (W.hous - W.ring) / 2 - 0.15, 0.3, { z: s * (W.ring / 2 + (W.hous - W.ring) / 4 + 0.075) }), M.housing)));
+
+// dönen halka + tırtıklar + mıknatıslar
+spin.add(reg("ring", new THREE.Mesh(band(R.ringIn, R.ringOut, W.ring, 0.55), M.ring)));
+{
+  const N = 72, ridge = new THREE.InstancedMesh(rbox(0.2, 0.12, W.ring - 1.3, 0.05), M.ring, N), o = new THREE.Object3D();
+  for (let i = 0; i < N; i++) { const a = rad(i * 360 / N); o.position.set((R.ringOut - 0.01) * Math.cos(a), (R.ringOut - 0.01) * Math.sin(a), 0); o.rotation.set(0, 0, a - Math.PI / 2); o.updateMatrix(); ridge.setMatrixAt(i, o.matrix); }
+  spin.add(reg("ring", ridge));
+}
+for (let i = 0; i < MAGNETS; i++) {
+  const m = mount(spin, i * 45, R.ringIn + 0.2);
+  m.add(reg("magnets", new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.35, 24), i % 2 ? M.magS : M.magN)));
+}
+
+// haptik dalgalar
+const waves = Array.from({ length: 7 }, () => {
+  const w = new THREE.Mesh(new THREE.TorusGeometry(R.ringOut + 0.3, 0.05, 8, 180), glowMat(0x8fd8d4, 2.2));
+  w.visible = false; w.userData.life = 1; w.raycast = () => {}; product.add(w); return w;
+});
+function emitWave(strength = 1) {
+  const w = waves.find(x => x.userData.life >= 1) || waves[0];
+  w.userData.life = 0; w.userData.k = strength; w.visible = true;
+}
+
+// parmak
+const finger = new THREE.Mesh(new THREE.CylinderGeometry(R.skin - 0.05, R.skin - 0.35, 50, 64, 1, true),
+  phys({ color: 0xd9a98c, roughness: 0.6, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }));
+finger.rotation.x = Math.PI / 2; finger.visible = false; product.add(finger);
+
+// gölge
+const shadow = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshBasicMaterial({ map: radialTex("rgba(0,0,0,0.55)", "rgba(0,0,0,0)"), transparent: true, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2; shadow.position.y = -15.5; scene.add(shadow);
+
+// ---------- şarj kaidesi ----------
+const dock = new THREE.Group(); dock.position.y = -15.5; scene.add(dock);
+const atY = (mesh, y) => { mesh.position.y = y; return mesh; };
+dock.add(reg("dock", atY(new THREE.Mesh(band(0, 20, 3.5, 1.4, { axisY: true }), M.dockBase), 1.75)));
+const statusRing = new THREE.Mesh(new THREE.TorusGeometry(16.2, 0.16, 12, 200), M.status); statusRing.rotation.x = Math.PI / 2; statusRing.position.y = 3.52; dock.add(reg("dock", statusRing));
+dock.add(reg("dock", atY(new THREE.Mesh(band(8.6, 10.6, 2, 0.5, { axisY: true }), M.dockBase), 4.5)));
+dock.add(reg("dock", atY(new THREE.Mesh(band(0, 8.75, 11.5, 2.6, { axisY: true }), M.glass), 11.25)));
+dock.add(reg("txcoil", new THREE.Mesh(new THREE.TubeGeometry(new Helix(7.0, 6.2, 13.2, 9, true), 900, 0.13, 8, false), M.txcoil)));
+{ const usb = new THREE.Mesh(rbox(3.2, 1.1, 1.2, 0.4), std({ color: 0x0b0d0f, roughness: 0.5 })); usb.position.set(0, 1.6, 19.6); dock.add(reg("dock", usb)); }
+const flux = Array.from({ length: 5 }, (_, i) => {
+  const t = new THREE.Mesh(new THREE.TorusGeometry(7.6, 0.07, 8, 140), glowMat(0x8fd8d4, 2.6)); t.rotation.x = Math.PI / 2; t.raycast = () => {};
+  t.userData.phase = i / 5; dock.add(t); return t;
+});
+dock.scale.setScalar(0.001); dock.visible = false;
+
+// ---------- son işlem ----------
+const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.55, 0.55, 0.9);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+function resize() {
+  const w = Math.max(1, stageEl.clientWidth), h = Math.max(1, stageEl.clientHeight);
+  renderer.setSize(w, h, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stageEl); resize();
+
+// ---------- kesit tablosu ----------
+const fmt = v => v.toFixed(2).replace(".", ",");
+document.getElementById("stack").innerHTML = [
+  ["İç halka", R.shellOut - R.skin], ["Esnek PCB", R.pcbOut - R.shellOut], ["Pil", R.batOut - R.batIn + (R.batIn - R.pcbOut)],
+  ["Dış gövde", R.housOut - R.batOut], ["Boşluk + dönen halka", R.ringOut - R.housOut],
+].map(([n, v]) => `<dt>${n}</dt><dd>${fmt(v)} mm</dd>`).join("") + `<dt>Toplam</dt><dd><strong>${fmt(R.ringOut - R.skin)} mm</strong></dd><dt>iRing (karşılaştırma)</dt><dd>4,05 mm</dd>`;
+
+// ---------- listeler ----------
+const featEl = document.getElementById("featList"), partEl = document.getElementById("partList");
+const groupBy = (arr, key) => arr.reduce((m, x) => ((m[key(x)] ||= []).push(x), m), {});
+featEl.innerHTML = Object.entries(groupBy(FEATURES.map((f, i) => ({ ...f, i })), f => f.g)).map(([g, fs]) => `
+  <p class="grp-title">${g}</p>
+  <ul class="list" role="listbox" aria-label="${g}">${fs.map(f => `
+    <li class="item" role="option" tabindex="0" aria-selected="false" data-kind="feat" data-i="${f.i}">
+      <span class="num">${f.n ?? "·"}</span><span class="name">${f.name}</span><span class="tag f-${f.tag}">${FTAG[f.tag]}</span>
+    </li>`).join("")}</ul>`).join("");
+partEl.innerHTML = Object.entries(groupBy(PART_ORDER, id => PARTS[id].grp)).map(([g, ids]) => `
+  <p class="grp-title">${g}</p>
+  <ul class="list" role="listbox" aria-label="${g}">${ids.map(id => `
+    <li class="item" role="option" tabindex="0" aria-selected="false" data-kind="part" data-id="${id}">
+      <span class="sw" style="background:${PARTS[id].sw}"></span><span class="name">${PARTS[id].name}</span><span class="tag ${PARTS[id].tag}">${PTAG[PARTS[id].tag]}</span>
+    </li>`).join("")}</ul>`).join("");
+for (const el of [featEl, partEl]) {
+  const act = li => li.dataset.kind === "feat" ? selectFeature(Number(li.dataset.i)) : selectPart(li.dataset.id, true);
+  el.addEventListener("click", e => { const li = e.target.closest(".item"); if (li) act(li); });
+  el.addEventListener("keydown", e => { const li = e.target.closest(".item"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); act(li); } });
+}
+
+// sekmeler
+const tabs = ["feat", "parts", "tech"];
+function showTab(t) {
+  for (const x of tabs) {
+    document.getElementById(`tab-${x}`).setAttribute("aria-selected", String(x === t));
+    document.getElementById(`pane-${x}`).hidden = x !== t;
+  }
+}
+for (const t of tabs) document.getElementById(`tab-${t}`).addEventListener("click", () => showTab(t));
+
+// ---------- seçim ve bilgi kartı ----------
+const infoEl = document.getElementById("info");
+const accent = new THREE.Color(0x8fd8d4);
+let highlighted = [];
+function matsOf(id) { const s = new Set(); for (const m of partMeshes[id] || []) if (!m.material.userData.noHL) s.add(m.material); return [...s]; }
+function highlight(ids) {
+  for (const id of highlighted) for (const mt of matsOf(id)) { mt.emissive?.set(0x000000); mt.emissiveIntensity = 1; }
+  highlighted = ids;
+  for (const id of ids) for (const mt of matsOf(id)) { mt.emissive?.copy(accent); mt.emissiveIntensity = 0.32; }
+}
+function markList(kind, val) {
+  document.querySelectorAll(".item").forEach(li => li.setAttribute("aria-selected", String(li.dataset.kind === kind && (li.dataset.id === val || li.dataset.i === String(val)))));
+}
+function infoDefault() {
+  infoEl.innerHTML = `<h3>Bir özelliğe ya da parçaya dokun</h3>
+    <p>Kamera o parçaya yaklaşır, ne işe yaradığı burada görünür. Alttaki modlar yüzüğü çalışırken gösterir.</p>
+    <p class="spec">Görseller tasarım önerisidir; sinyaller örnek veridir.</p>`;
+}
+function selectPart(id, focus) {
+  if (!id) { highlight([]); markList(null, null); infoDefault(); return; }
+  const p = PARTS[id];
+  highlight([id]); markList("part", id);
+  infoEl.innerHTML = `<h3>${p.name} <span class="tag ${p.tag}">${PTAG[p.tag]}</span></h3><p>${p.role}</p><p class="spec">${p.spec}</p>`;
+  if ((id === "dock" || id === "txcoil") && mode !== "charge") setMode("charge", { keepSel: true });
+  if (focus) focusParts([id]);
+}
+function selectFeature(i) {
+  const f = FEATURES[i];
+  highlight(f.parts); markList("feat", i);
+  const partNames = f.parts.map(id => PARTS[id].name).join(" · ");
+  infoEl.innerHTML = `<h3>${f.n ? `<span class="num" style="text-align:left">${String(f.n).padStart(2, "0")}</span>` : ""}${f.name} <span class="tag f-${f.tag}">${FTAG[f.tag]}</span></h3>
+    <p>${f.d}</p><p class="spec">${partNames}</p>${f.ev ? `<p class="ev">Kanıt: ${f.ev}</p>` : ""}`;
+  if (f.mode && f.mode !== mode) setMode(f.mode, { keepSel: true });
+  else focusParts(f.parts);
+}
+
+// ---------- kamera hedefleri ----------
+const goal = { pos: new THREE.Vector3(), target: new THREE.Vector3(), active: false };
+function flyTo(pos, target) {
+  goal.pos.copy(pos); goal.target.copy(target); goal.active = true;
+  if (reduceMotion) { camera.position.copy(pos); controls.target.copy(target); goal.active = false; }
+}
+function focusParts(ids) {
+  product.updateMatrixWorld(true); dock.updateMatrixWorld(true);
+  const box = new THREE.Box3(); for (const id of ids) for (const m of partMeshes[id] || []) box.expandByObject(m);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+  let dir = camera.position.clone().sub(controls.target).normalize();
+  const radial = new THREE.Vector3(c.x - product.position.x, c.y - product.position.y, 0);
+  if (radial.length() > 2 && size < 14 && mode !== "charge") dir = radial.normalize().multiplyScalar(0.75).add(new THREE.Vector3(0.25, 0.15, 0.6)).normalize();
+  flyTo(c.clone().add(dir.multiplyScalar(Math.max(size * 2.6, 11))), c);
+  controls.autoRotate = false;
+}
+controls.addEventListener("start", () => { goal.active = false; controls.autoRotate = false; });
+
+// ---------- modlar ----------
+const MODES = {
+  product: { label: "Ürün", explode: 0, xray: false, dock: 0, cam: [[34, 15, 44], [0, 0, 0]], auto: true },
+  layers:  { label: "Katmanlar", explode: 1, xray: false, dock: 0, cam: [[84, 28, 50], [0, 0, 2]] },
+  ring:    { label: "Halka", explode: 0, xray: true, dock: 0, cam: [[7, 9, 42], [0, 0, 0]] },
+  stress:  { label: "Stres anı", explode: 0, xray: true, dock: 0, cam: [[14, -30, 28], [0, -5, 0]] },
+  breath:  { label: "Nefes", explode: 0, xray: false, dock: 0, cam: [[30, 13, 40], [0, 0, 0]] },
+  charge:  { label: "Şarj", explode: 0, xray: true, dock: 1, cam: [[38, 10, 40], [0, -6, 0]] },
+};
+const modebar = document.getElementById("modebar");
+modebar.innerHTML = Object.entries(MODES).map(([k, m]) => `<button class="mode" type="button" data-mode="${k}" aria-pressed="false">${m.label}</button>`).join("");
+modebar.addEventListener("click", e => { const b = e.target.closest(".mode"); if (b) setMode(b.dataset.mode); });
+
+let mode = "product", modeT = 0, xray = false, explode = 0, explodeTarget = 0, dockK = 0;
+const xrayBtn = document.getElementById("xrayBtn");
+function setXray(v) { xray = v; xrayBtn.setAttribute("aria-pressed", String(v)); }
+xrayBtn.addEventListener("click", () => setXray(!xray));
+
+function setMode(k, o = {}) {
+  mode = k; modeT = 0; stressBuzzed = false; breathPrev = ""; fullT = 0; const m = MODES[k];
+  modebar.querySelectorAll(".mode").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === k)));
+  explodeTarget = m.explode; setXray(m.xray);
+  controls.autoRotate = !!m.auto && !reduceMotion;
+  controls.enableZoom = k !== "ring";
+  flyTo(new THREE.Vector3(...m.cam[0]), new THREE.Vector3(...m.cam[1]));
+  if (!o.keepSel) selectPart(null);
+  renderHud();
+}
+
+// ---------- HUD ----------
+const hud = document.getElementById("hud");
+let ema = 3, encoderSteps = 0, fidget = 214, savedText = "", battery = 18;
+const SIG = [
+  { key: "eda", label: "EDA", color: "--s-eda", unit: " µS", f: s => 2.1 + 2.5 * s, dp: 1 },
+  { key: "amp", label: "Damar genliği", color: "--s-amp", unit: "%", f: s => 100 - 38 * s, dp: 0 },
+  { key: "temp", label: "Parmak", color: "--s-temp", unit: " °C", f: s => 33.6 - 1.6 * s, dp: 1 },
+  { key: "hrv", label: "HRV", color: "--s-hrv", unit: " ms", f: s => 48 - 19 * s, dp: 0 },
+];
+const sigHist = Object.fromEntries(SIG.map(s => [s.key, []]));
+function renderHud() {
+  if (mode === "product") {
+    hud.innerHTML = `<p class="hud-eye">Wisp Ring · V3</p>
+      <div class="spec-chips"><span class="spec-chip"><b>10</b>ölçüm</span><span class="spec-chip"><b>4</b>etkileşim</span><span class="spec-chip"><b>4</b>araştırma katkısı</span>
+      <span class="spec-chip">Kablosuz şarj</span><span class="spec-chip">Ekran yok</span><span class="spec-chip">Zirkonya seramik</span></div>
+      <p class="hud-note">Modları dene: Halka, Stres anı, Nefes, Şarj.</p>`;
+  } else if (mode === "layers") {
+    hud.innerHTML = `<p class="hud-eye">Katmanlar · parmaktan dışarı</p>
+      <div class="slider-row"><label for="explode">Ayır</label><input id="explode" type="range" min="0" max="1" step="0.01" value="${explodeTarget}"></div>
+      <p class="hud-meta">İç halka → esnek PCB → pil → gövde → dönen halka</p>`;
+    hud.querySelector("#explode").addEventListener("input", e => { explodeTarget = Number(e.target.value); });
+  } else if (mode === "ring") {
+    hud.innerHTML = `<p class="hud-eye">Anlık soru · micro-EMA</p>
+      <p class="hud-title">Şu an ne kadar gerginsin?</p>
+      <div class="ema" id="emaRow">${["Çok sakin", "Sakin", "Orta", "Gergin", "Çok gergin"].map((t, i) => `<div data-v="${i + 1}"><b>${i + 1}</b><small>${t}</small></div>`).join("")}</div>
+      <div class="hud-row"><button class="btn" type="button" data-act="ccw">← Sola çevir</button><button class="btn" type="button" data-act="cw">Sağa çevir →</button><button class="btn primary" type="button" data-act="tap">Dokun · kaydet</button></div>
+      <p class="saved" id="saved">${savedText}</p>
+      <p class="hud-meta" id="ringMeta"></p>
+      <p class="hud-note">Ok tuşları ya da fare tekerleği de halkayı çevirir.</p>`;
+    updateRingHud();
+  } else if (mode === "stress") {
+    hud.innerHTML = `<p class="hud-eye">Gerginlik anı · çoklu sinyal</p>
+      ${SIG.map(s => `<div class="sig"><span>${s.label}</span><canvas id="c-${s.key}" width="240" height="52"></canvas><output id="o-${s.key}">–</output></div>`).join("")}
+      <div class="verdict" id="verdict"><span class="pulse"></span><span id="verdictText">İzleniyor…</span></div>
+      <div class="hud-row"><button class="btn" type="button" data-act="replay">Tekrar oynat</button></div>
+      <p class="hud-note">Örnek sinyal, gerçek ölçüm değil.</p>`;
+    for (const s of SIG) sigHist[s.key].length = 0;
+  } else if (mode === "breath") {
+    hud.innerHTML = `<p class="hud-eye">Nefes rehberi · titreşimle</p>
+      <p class="breath-word" id="bWord">Nefes al</p>
+      <div class="bar"><i id="bBar"></i></div>
+      <p class="hud-meta" id="bMeta">Ritim 6,0 /dk · 4 sn al · 6 sn ver</p>
+      <p class="hud-note">Ritim, ölçülen solunum ve HRV'ye göre kişiye ayarlanır. Değerler örnektir.</p>`;
+  } else if (mode === "charge") {
+    battery = 18;
+    hud.innerHTML = `<p class="hud-eye">Kablosuz şarj · eş eksenli</p>
+      <div class="batt"><b id="bPct">18%</b><span class="hud-meta" id="bState">Şarj oluyor</span></div>
+      <div class="bar"><i id="bFill"></i></div>
+      <p class="hud-meta">6,78 MHz · temas yok · mıknatıssız hizalama</p>
+      <p class="hud-meta" id="bTemp">Pil 31 °C · güvenli</p>`;
+  }
+}
+hud.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const a = b.dataset.act;
+  if (a === "cw") turn(1); else if (a === "ccw") turn(-1);
+  else if (a === "tap") { const now = new Date(); savedText = `Kaydedildi: ${ema}/5 · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`; buzz(0.9); updateRingHud(); }
+  else if (a === "replay") { modeT = 0; stressBuzzed = false; for (const s of SIG) sigHist[s.key].length = 0; }
+});
+function updateRingHud() {
+  const row = hud.querySelector("#emaRow"); if (!row) return;
+  row.querySelectorAll("div").forEach(d => d.classList.toggle("on", Number(d.dataset.v) === ema));
+  hud.querySelector("#saved").textContent = savedText;
+  hud.querySelector("#ringMeta").textContent = `Encoder ${encoderSteps > 0 ? "+" : ""}${encoderSteps} adım · bugün ${fidget} çevirme (fidget)`;
+}
+
+// encoder
+let ringAngle = 0, ringTargetAngle = 0, buzzT = 0, hallFlash = 0;
+function turn(dir) {
+  encoderSteps += dir; fidget += 1; ema = Math.min(5, Math.max(1, ema + dir));
+  ringTargetAngle += dir * STEP_DEG * DEG; savedText = "";
+  buzz(0.35); hallFlash = 1; updateRingHud();
+}
+function buzz(k) { buzzT = Math.max(buzzT, k); emitWave(k); }
+window.addEventListener("keydown", e => {
+  if (mode !== "ring" || e.target.closest("input, textarea")) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); turn(1); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); turn(-1); }
+});
+let wheelAcc = 0;
+renderer.domElement.addEventListener("wheel", e => {
+  if (mode !== "ring") return;
+  e.preventDefault(); wheelAcc += e.deltaY;
+  while (Math.abs(wheelAcc) > 70) { turn(wheelAcc > 0 ? 1 : -1); wheelAcc -= Math.sign(wheelAcc) * 70; }
+}, { passive: false });
+
+// ---------- araç düğmeleri ----------
+function setFinish(k) {
+  const f = FINISH[k];
+  M.ring.color.set(f.ring); M.ring.roughness = f.ringR; M.housing.color.set(f.hous); M.dockBase.color.set(f.base);
+  document.getElementById("finNight").setAttribute("aria-pressed", String(k === "night"));
+  document.getElementById("finPearl").setAttribute("aria-pressed", String(k === "pearl"));
+}
+document.getElementById("finNight").addEventListener("click", () => setFinish("night"));
+document.getElementById("finPearl").addEventListener("click", () => setFinish("pearl"));
+const fingerBtn = document.getElementById("fingerBtn");
+fingerBtn.addEventListener("click", () => { finger.visible = !finger.visible; fingerBtn.setAttribute("aria-pressed", String(finger.visible)); });
+document.getElementById("resetBtn").addEventListener("click", () => setMode("product"));
+
+// ---------- tıklama / üzerine gelme ----------
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const SKIN_PARTS = ["shell", "housing", "ring"];
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const objs = Object.values(partMeshes).flat().filter(m => { let o = m; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+  const hits = raycaster.intersectObjects(objs, false);
+  const skip = id => id === "shell" || (xray && SKIN_PARTS.includes(id));
+  return (hits.find(h => !skip(h.object.userData.partId)) || hits[0])?.object.userData.partId || null;
+}
+let down = null;
+renderer.domElement.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) { const id = pick(e); if (id) { selectPart(id, true); showTab("parts"); } else selectPart(null); }
+  down = null;
+});
+const hoverTag = document.getElementById("hoverTag");
+renderer.domElement.addEventListener("pointermove", e => {
+  if (e.pointerType !== "mouse" || e.buttons) { hoverTag.hidden = true; return; }
+  const id = pick(e); if (!id) { hoverTag.hidden = true; return; }
+  const r = stageEl.getBoundingClientRect();
+  hoverTag.textContent = PARTS[id].name; hoverTag.style.left = (e.clientX - r.left) + "px"; hoverTag.style.top = (e.clientY - r.top) + "px"; hoverTag.hidden = false;
+});
+renderer.domElement.addEventListener("pointerleave", () => { hoverTag.hidden = true; });
+
+// katman etiketleri
+const labelsEl = document.getElementById("labels");
+const LAYER_LABELS = [["shell", "01", "İç halka + EDA", 9.8], ["pcb", "02", "Esnek PCB + bobin", 10.8], ["battery", "03", "Kavisli pil", 10.9], ["housing", "04", "Dış gövde", 11.4], ["ring", "05", "Dönen halka", 12.7]];
+const labelEls = LAYER_LABELS.map(([, n, t]) => { const d = document.createElement("div"); d.className = "layer-label"; d.innerHTML = `<small>${n}</small>${t}`; d.style.opacity = 0; labelsEl.appendChild(d); return d; });
+const tmpV = new THREE.Vector3();
+
+// ---------- döngü ----------
+const EXPLODE = { shell: -18, pcb: -7, battery: 3, housing: 12, ring: 22 };
+const clock = new THREE.Clock();
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const sigColors = Object.fromEntries(SIG.map(s => [s.key, cssVar(s.color)]));
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+let sampleAcc = 0, breathPrev = "", stressBuzzed = false, fullT = 0;
+
+function drawSpark(key, vals, lo, hi) {
+  const c = hud.querySelector(`#c-${key}`); if (!c) return;
+  const g = c.getContext("2d"), w = c.width, h = c.height;
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = "rgba(255,255,255,0.06)"; g.lineWidth = 1; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+  if (vals.length < 2) return;
+  const x = i => (i / 119) * w, y = v => h - 4 - ((v - lo) / (hi - lo)) * (h - 8);
+  const grd = g.createLinearGradient(0, 0, 0, h); grd.addColorStop(0, sigColors[key] + "55"); grd.addColorStop(1, sigColors[key] + "00");
+  g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v)));
+  g.lineTo(x(vals.length - 1), h); g.lineTo(0, h); g.closePath(); g.fillStyle = grd; g.fill();
+  g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v)));
+  g.strokeStyle = sigColors[key]; g.lineWidth = 2.5; g.lineJoin = "round"; g.stroke();
+  const lx = x(vals.length - 1), ly = y(vals[vals.length - 1]);
+  g.fillStyle = sigColors[key]; g.beginPath(); g.arc(lx, ly, 4, 0, Math.PI * 2); g.fill();
+}
+
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  modeT += dt;
+  const k = 1 - Math.pow(0.0015, dt);
+
+  // patlatma
+  explode += (explodeTarget - explode) * k;
+  for (const [n, z] of Object.entries(EXPLODE)) L[n].position.z = z * explode;
+
+  // röntgen
+  const op = (mat, target) => { mat.opacity += (target - mat.opacity) * k; mat.depthWrite = mat.opacity > 0.98; };
+  op(M.ring, xray ? 0.16 : 1); op(M.housing, xray ? 0.14 : 1); M.shell.opacity += ((xray ? 0.32 : 0.62) - M.shell.opacity) * k;
+
+  // ürün konumu (şarjda kaideye oturur)
+  const charging = mode === "charge";
+  product.position.y += ((charging ? -6 : 0) - product.position.y) * k;
+  product.rotation.x += ((charging ? -Math.PI / 2 : 0) - product.rotation.x) * k;
+  dockK += ((charging ? 1 : 0) - dockK) * k;
+  dock.visible = dockK > 0.01; dock.scale.setScalar(Math.max(0.001, 0.6 + 0.4 * dockK));
+  M.dockBase.transparent = dockK < 0.99; M.dockBase.opacity = dockK;
+  shadow.scale.setScalar(1 + 0.35 * dockK);
+
+  // encoder
+  ringAngle += (ringTargetAngle - ringAngle) * (1 - Math.pow(0.00002, dt));
+  spin.rotation.z = -ringAngle;
+  hallFlash = Math.max(0, hallFlash - dt * 3);
+  M.hall.emissive.copy(accent); M.hall.emissiveIntensity = highlighted.includes("hall") ? 0.32 : hallFlash * 2.2;
+
+  // titreşim
+  buzzT = Math.max(0, buzzT - dt * 2.5);
+  const j = reduceMotion ? 0 : buzzT * 0.12;
+  L.pcb.rotation.z = Math.sin(t * 160) * j * 0.01;
+  product.position.x = Math.sin(t * 190) * j;
+  M.lra.emissive.copy(accent); M.lra.emissiveIntensity = highlighted.includes("lra") ? 0.32 : buzzT * 1.6;
+
+  // dalgalar
+  for (const w of waves) {
+    if (w.userData.life >= 1) { w.visible = false; continue; }
+    w.userData.life = Math.min(1, w.userData.life + dt * 0.7);
+    const l = w.userData.life; w.scale.setScalar(1 + l * 0.55); w.material.opacity = (1 - l) * (1 - l) * 0.9 * (w.userData.k ?? 1);
+    w.position.z = L.ring.position.z;
+  }
+
+  // PPG ışıkları: nabız gibi
+  const stressing = mode === "stress";
+  const s = stressing ? smooth(2, 7, modeT) : 0;
+  const bpm = 66 + 26 * s, beat = (t * bpm / 60) % 1, pulse = Math.exp(-beat * 7);
+  const ppgOn = stressing || mode === "breath" || highlighted.includes("ppg");
+  M.ledG.emissiveIntensity = ppgOn ? 0.6 + pulse * 5 : 0.35;
+  M.ledR.emissiveIntensity = ppgOn ? 0.3 + pulse * 2 : 0.25;
+
+  // stres anı
+  for (const g of edaGlows) g.material.opacity = stressing ? s * (0.55 + 0.25 * Math.sin(t * 6)) : 0;
+  tempGlow.material.opacity = stressing ? s * 0.6 : 0;
+  if (stressing) {
+    sampleAcc += dt;
+    while (sampleAcc > 1 / 20) {
+      sampleAcc -= 1 / 20;
+      const ss = smooth(2, 7, modeT);
+      for (const sg of SIG) { const arr = sigHist[sg.key]; arr.push(sg.f(ss) + (Math.random() - 0.5) * (sg.key === "amp" ? 2.5 : sg.key === "hrv" ? 1.6 : 0.06)); if (arr.length > 120) arr.shift(); }
+    }
+    const R0 = { eda: [1.6, 5.2], amp: [55, 106], temp: [31.5, 34], hrv: [24, 54] };
+    for (const sg of SIG) {
+      const arr = sigHist[sg.key]; drawSpark(sg.key, arr, ...R0[sg.key]);
+      const o = hud.querySelector(`#o-${sg.key}`); if (o && arr.length) o.textContent = arr[arr.length - 1].toFixed(sg.dp).replace(".", ",") + sg.unit;
+    }
+    const v = hud.querySelector("#verdict"), vt = hud.querySelector("#verdictText");
+    if (v) {
+      const on = s > 0.85; v.classList.toggle("on", on);
+      vt.textContent = on ? (modeT > 8.5 ? "4/4 sinyal · yüzük titredi: “Bir dakika nefes alalım mı?”" : "Gerginlik anı algılandı · 4/4 sinyal") : "İzleniyor…";
+    }
+    if (modeT > 8.5 && !stressBuzzed) { stressBuzzed = true; buzz(1); setTimeout(() => buzz(0.8), 260); }
+  }
+
+  // nefes
+  if (mode === "breath") {
+    const cyc = modeT % 10, inhale = cyc < 4, p = inhale ? cyc / 4 : 1 - (cyc - 4) / 6;
+    const word = inhale ? "Nefes al" : "Nefes ver";
+    if (word !== breathPrev) { breathPrev = word; const el = hud.querySelector("#bWord"); if (el) el.textContent = word; }
+    const bar = hud.querySelector("#bBar"); if (bar) bar.style.width = (p * 100).toFixed(1) + "%";
+    if (inhale && Math.floor(modeT * 2.5) !== Math.floor((modeT - dt) * 2.5)) buzz(0.25 + 0.5 * p);
+    const meta = hud.querySelector("#bMeta"); if (meta) meta.textContent = `Ritim 6,0 /dk · HRV ${Math.round(41 + Math.min(modeT, 40) * 0.35)} ms ↑`;
+    if (!reduceMotion) L.ring.scale.setScalar(1 + p * 0.012);
+  } else L.ring.scale.setScalar(1);
+
+  // şarj
+  if (dockK > 0.01) {
+    const chargingNow = charging && dockK > 0.9;
+    M.status.emissiveIntensity = chargingNow ? 1.4 + Math.sin(t * 2.2) * 0.8 : 0.2;
+    for (const f of flux) {
+      const ph = (t * 0.45 + f.userData.phase) % 1;
+      f.position.y = 6 + ph * 8.5; f.scale.setScalar(0.92 + ph * 0.22);
+      f.material.opacity = chargingNow ? Math.sin(ph * Math.PI) * 0.75 : 0;
+    }
+    if (chargingNow) {
+      if (battery < 100) battery = Math.min(100, battery + dt * 6);
+      else if ((fullT += dt) > 3) { battery = 18; fullT = 0; }
+      const pct = hud.querySelector("#bPct"), fill = hud.querySelector("#bFill"), st = hud.querySelector("#bState"), tp = hud.querySelector("#bTemp");
+      if (pct) pct.textContent = Math.floor(battery) + "%";
+      if (fill) fill.style.width = battery + "%";
+      if (st) st.textContent = battery >= 100 ? "Dolu" : "Şarj oluyor";
+      if (tp) tp.textContent = `Pil ${(31 + battery * 0.04).toFixed(1).replace(".", ",")} °C · güvenli`;
+    }
+  }
+
+  // otomatik yarım tur (ürün modu)
+  if (goal.active) {
+    controls.target.lerp(goal.target, k); camera.position.lerp(goal.pos, k);
+    if (camera.position.distanceTo(goal.pos) < 0.05) goal.active = false;
+  }
+  controls.update();
+
+  // katman etiketleri
+  const showLabels = explode > 0.3 && mode === "layers";
+  LAYER_LABELS.forEach(([layer, , , r], i) => {
+    const el = labelEls[i];
+    if (!showLabels) { el.style.opacity = 0; return; }
+    tmpV.set(0, r + 1.2, 0); L[layer].localToWorld(tmpV); tmpV.project(camera);
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    el.style.left = ((tmpV.x + 1) / 2 * w) + "px"; el.style.top = ((1 - tmpV.y) / 2 * h) + "px";
+    el.style.opacity = Math.min(1, (explode - 0.3) * 2);
+  });
+
+  composer.render();
+  requestAnimationFrame(tick);
+}
+
+infoDefault();
+setFinish("night");
+setMode("product");
+tick();
+</script>
+
+</body>
+</html>
